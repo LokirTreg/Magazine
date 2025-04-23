@@ -75,18 +75,14 @@ public class ProductGrpcService : ProductService.ProductServiceBase
         if (product == null)
             throw new RpcException(new Status(StatusCode.NotFound, $"Товар с ID {request.Product.Id} не найден"));
 
-        // Обновление основных полей
         product.Title = request.Product.Title;
         product.Description = request.Product.Description;
         product.Price = request.Product.Price;
 
-        // Обновление продавца
         await UpdateSeller(product, request.Seller);
 
-        // Обновление складских остатков
         await UpdateWarehouseStocks(product, request.WarehouseStocks);
 
-        // Обновление стран
         await UpdateCountries(product, request.AvailableCountries);
 
         await _dbContext.SaveChangesAsync();
@@ -132,10 +128,13 @@ public class ProductGrpcService : ProductService.ProductServiceBase
 
     private async Task UpdateSeller(Server.Data.Product product, Shared.Protos.Seller protoSeller)
     {
-        Id = protoSeller.Id,
-        Name = protoSeller.Name,
-        ContactEmail = protoSeller.ContactEmail
-    };
+        var seller = await _dbContext.Sellers.FindAsync(protoSeller.Id)
+            ?? throw new RpcException(new Status(StatusCode.NotFound, "Продавец не найден"));
+
+        seller.Name = protoSeller.Name;
+        seller.ContactEmail = protoSeller.ContactEmail;
+        product.Seller = seller;
+    }
 
     private async Task UpdateWarehouseStocks(
         Server.Data.Product product,
@@ -144,7 +143,6 @@ public class ProductGrpcService : ProductService.ProductServiceBase
         var existingStocks = product.WarehouseStocks.ToList();
         var requestStockMap = stocks.ToDictionary(s => s.Warehouse.Id);
 
-        // Удаление отсутствующих складов
         foreach (var existing in existingStocks)
         {
             if (!requestStockMap.ContainsKey(existing.WarehouseId))
@@ -153,8 +151,6 @@ public class ProductGrpcService : ProductService.ProductServiceBase
                 _dbContext.Remove(existing);
             }
         }
-
-        // Добавление/обновление складов
         foreach (var (warehouseId, protoStock) in requestStockMap)
         {
             var warehouse = await _dbContext.Warehouses.FindAsync(warehouseId)

@@ -40,7 +40,6 @@ app.UseEndpoints(endpoints =>
     endpoints.MapGet("/", () => "gRPC Server is running");
 });
 
-// инициализация базы
 using (var scope = app.Services.CreateScope())
 {
     var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
