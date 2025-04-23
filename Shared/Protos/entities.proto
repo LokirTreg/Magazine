@@ -60,5 +60,5 @@ message Warehouse {
 message Country {
   int32 id = 1;
   string name = 2;
-  string code = 3; // ISO-код страны, например "US", "RU"
+  string code = 3;
 }
