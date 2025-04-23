@@ -28,7 +28,9 @@ public class WarehouseStock
 {
     [Key]
     public int WarehouseId { get; set; }
+    public int ProductId { get; set; }
     public Warehouse Warehouse { get; set; } = null!;
+    public Product Product { get; set; } = null!;
     public int Quantity { get; set; }
 }
 
