@@ -36,7 +36,6 @@
                         <th>Название</th>
                         <th>Описание</th>
                         <th>Цена</th>
-                        <th>Доступные страны</th>
                         <th class="text-end">Действия</th>
                     </tr>
                 </thead>
@@ -55,7 +54,7 @@
                                     ? product.Description.Substring(0, 47) + "..."
                                     : product.Description)
                             </td>
-                            <td>@product.Price.ToString("C")</td>
+                            <td>@product.Price.ToString("C", System.Globalization.CultureInfo.GetCultureInfo("en-US"))</td>
                             <td class="text-end" style="min-width: 120px;">
                                 <NavLink href="@($"/product/{product.Id}")"
                                          class="btn btn-sm btn-outline-primary">
