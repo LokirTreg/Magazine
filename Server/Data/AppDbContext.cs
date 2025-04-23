@@ -10,6 +10,7 @@ namespace Server.Data
         public DbSet<Product> Products => Set<Product>();
         public DbSet<Seller> Sellers => Set<Seller>();
         public DbSet<Warehouse> Warehouses => Set<Warehouse>();
+        public DbSet<WarehouseStock> WarehouseStocks => Set<WarehouseStock>();
         public DbSet<Country> Countries => Set<Country>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)

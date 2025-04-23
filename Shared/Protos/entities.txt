@@ -2,13 +2,17 @@
 option csharp_namespace = "Shared.Protos";
 
 service ProductService {
+  // Получить подробную информацию о товаре
   rpc GetProductDetail (GetProductDetailRequest) returns (ProductDetailResponse);
 
+  // Обновить информацию о товаре
   rpc UpdateProduct (UpdateProductRequest) returns (ProductDetailResponse);
 
+  // Получить список всех товаров (опционально)
   rpc ListProducts (ListProductsRequest) returns (ListProductsResponse);
 }
 
+// --- Запросы и ответы ---
 
 message GetProductDetailRequest {
   int32 product_id = 1;
@@ -34,6 +38,7 @@ message ProductDetailResponse {
   repeated Country available_countries = 4;
 }
 
+// --- Основные сущности ---
 
 message Product {
   int32 id = 1;

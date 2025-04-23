@@ -1,10 +1,8 @@
 ﻿using Grpc.Core;
 using Microsoft.EntityFrameworkCore;
 using Shared.Protos;
-using Shared;
 using Server.Data;
 using Microsoft.AspNetCore.Http;
-using System;
 
 namespace Server.Services;
 
@@ -28,6 +26,7 @@ public class ProductGrpcService : ProductService.ProductServiceBase
         _logger.LogInformation("Запрос товара ID: {ProductId}", request.ProductId);
 
         var product = await _dbContext.Products
+            .AsNoTracking()
             .Include(p => p.Seller)
             .Include(p => p.WarehouseStocks)
                 .ThenInclude(ws => ws.Warehouse)
@@ -41,6 +40,25 @@ public class ProductGrpcService : ProductService.ProductServiceBase
             : MapToResponse(product);
     }
 
+    public override async Task<ListProductsResponse> ListProducts(
+        ListProductsRequest request,
+        ServerCallContext context)
+    {
+        _logger.LogInformation("Запрос списка товаров");
+
+        var products = await _dbContext.Products
+            .AsNoTracking()
+            .Include(p => p.Seller)
+            .Include(p => p.WarehouseStocks)
+                .ThenInclude(ws => ws.Warehouse)
+            .Include(p => p.AvailableCountries)
+            .ToListAsync();
+
+        var response = new ListProductsResponse();
+        response.Products.AddRange(products.Select(MapToResponseProduct));
+        return response;
+    }
+
     public override async Task<ProductDetailResponse> UpdateProduct(
         UpdateProductRequest request,
         ServerCallContext context)
@@ -50,102 +68,133 @@ public class ProductGrpcService : ProductService.ProductServiceBase
         var product = await _dbContext.Products
             .Include(p => p.Seller)
             .Include(p => p.WarehouseStocks)
+                .ThenInclude(ws => ws.Warehouse)
             .Include(p => p.AvailableCountries)
             .FirstOrDefaultAsync(p => p.Id == request.Product.Id);
 
         if (product == null)
-        {
-            throw new RpcException(new Status(
-                StatusCode.NotFound,
-                $"Товар с ID {request.Product.Id} не найден"));
-        }
+            throw new RpcException(new Status(StatusCode.NotFound, $"Товар с ID {request.Product.Id} не найден"));
 
         // Обновление основных полей
         product.Title = request.Product.Title;
         product.Description = request.Product.Description;
         product.Price = request.Product.Price;
 
-        // Обновление связанных данных
-        product.Seller = MapSeller(request.Seller);
-        UpdateWarehouseStocks(product, request.WarehouseStocks);
-        UpdateCountries(product, request.AvailableCountries);
+        // Обновление продавца
+        await UpdateSeller(product, request.Seller);
+        
+        // Обновление складских остатков
+        await UpdateWarehouseStocks(product, request.WarehouseStocks);
+        
+        // Обновление стран
+        await UpdateCountries(product, request.AvailableCountries);
 
         await _dbContext.SaveChangesAsync();
-
         return MapToResponse(product);
     }
 
+    #region Helper Methods
+    private Shared.Protos.Product MapToResponseProduct(Server.Data.Product product) => new()
+    {
+        Id = product.Id,
+        Title = product.Title,
+        Description = product.Description,
+        Price = product.Price
+    };
+
     private ProductDetailResponse MapToResponse(Server.Data.Product product) => new()
     {
-        Product = new Shared.Protos.Product
-        {
-            Id = product.Id,
-            Title = product.Title,
-            Description = product.Description,
-            Price = product.Price
-        },
-        Seller = new Shared.Protos.Seller
+        Product = MapToResponseProduct(product),
+        Seller = new()
         {
             Id = product.Seller.Id,
             Name = product.Seller.Name,
             ContactEmail = product.Seller.ContactEmail
         },
-        WarehouseStocks = { product.WarehouseStocks.Select(ws =>
-            new Shared.Protos.WarehouseStock
+        WarehouseStocks =
+        {
+            product.WarehouseStocks.Select(ws => new Shared.Protos.WarehouseStock
             {
-                Warehouse = new Shared.Protos.Warehouse
-                {
-                    Id = ws.Warehouse.Id,
-                    Address = ws.Warehouse.Address
-                },
+                Warehouse = new() { Id = ws.Warehouse.Id, Address = ws.Warehouse.Address },
                 Quantity = ws.Quantity
-            })},
-        AvailableCountries = { product.AvailableCountries.Select(c =>
-            new Shared.Protos.Country
+            })
+        },
+        AvailableCountries =
+        {
+            product.AvailableCountries.Select(c => new Shared.Protos.Country
             {
                 Id = c.Id,
                 Name = c.Name,
                 Code = c.Code
-            })}
+            })
+        }
     };
 
-    private Server.Data.Seller MapSeller(Shared.Protos.Seller protoSeller) => new()
+    private async Task UpdateSeller(Server.Data.Product product, Shared.Protos.Seller protoSeller)
     {
-        Id = protoSeller.Id,
-        Name = protoSeller.Name,
-        ContactEmail = protoSeller.ContactEmail
-    };
+        var seller = await _dbContext.Sellers.FindAsync(protoSeller.Id)
+            ?? throw new RpcException(new Status(StatusCode.NotFound, "Продавец не найден"));
+        
+        seller.Name = protoSeller.Name;
+        seller.ContactEmail = protoSeller.ContactEmail;
+        product.Seller = seller;
+    }
 
-    private void UpdateWarehouseStocks(Server.Data.Product product,
+    private async Task UpdateWarehouseStocks(
+        Server.Data.Product product,
         IEnumerable<Shared.Protos.WarehouseStock> stocks)
     {
-        product.WarehouseStocks.Clear();
-        foreach (var stock in stocks)
+        var existingStocks = product.WarehouseStocks.ToList();
+        var requestStockMap = stocks.ToDictionary(s => s.Warehouse.Id);
+
+        // Удаление отсутствующих складов
+        foreach (var existing in existingStocks)
         {
-            product.WarehouseStocks.Add(new Server.Data.WarehouseStock
+            if (!requestStockMap.ContainsKey(existing.WarehouseId))
             {
-                Warehouse = new Server.Data.Warehouse
+                product.WarehouseStocks.Remove(existing);
+                _dbContext.Remove(existing);
+            }
+        }
+
+        // Добавление/обновление складов
+        foreach (var (warehouseId, protoStock) in requestStockMap)
+        {
+            var warehouse = await _dbContext.Warehouses.FindAsync(warehouseId)
+                ?? throw new RpcException(new Status(StatusCode.NotFound, $"Склад {warehouseId} не найден"));
+
+            var existingStock = product.WarehouseStocks
+                .FirstOrDefault(ws => ws.WarehouseId == warehouseId);
+
+            if (existingStock != null)
+            {
+                existingStock.Quantity = protoStock.Quantity;
+            }
+            else
+            {
+                product.WarehouseStocks.Add(new Server.Data.WarehouseStock
                 {
-                    Id = stock.Warehouse.Id,
-                    Address = stock.Warehouse.Address
-                },
-                Quantity = stock.Quantity
-            });
+                    ProductId = product.Id,
+                    WarehouseId = warehouse.Id,
+                    Quantity = protoStock.Quantity
+                });
+            }
         }
     }
 
-    private void UpdateCountries(Server.Data.Product product,
-        IEnumerable<Shared.Protos.Country> countries)
+    private async Task UpdateCountries(
+        Server.Data.Product product,
+        IEnumerable<Shared.Protos.Country> protoCountries)
     {
-        product.AvailableCountries.Clear();
-        foreach (var country in countries)
-        {
-            product.AvailableCountries.Add(new Server.Data.Country
-            {
-                Id = country.Id,
-                Name = country.Name,
-                Code = country.Code
-            });
-        }
+        var countryIds = protoCountries.Select(c => c.Id).ToList();
+        var countries = await _dbContext.Countries
+            .Where(c => countryIds.Contains(c.Id))
+            .ToListAsync();
+
+        if (countries.Count != countryIds.Count)
+            throw new RpcException(new Status(StatusCode.NotFound, "Одна или несколько стран не найдены"));
+
+        product.AvailableCountries = countries;
     }
+    #endregion
 }
