@@ -132,13 +132,10 @@ public class ProductGrpcService : ProductService.ProductServiceBase
 
     private async Task UpdateSeller(Server.Data.Product product, Shared.Protos.Seller protoSeller)
     {
-        var seller = await _dbContext.Sellers.FindAsync(protoSeller.Id)
-            ?? throw new RpcException(new Status(StatusCode.NotFound, "Продавец не найден"));
-
-        seller.Name = protoSeller.Name;
-        seller.ContactEmail = protoSeller.ContactEmail;
-        product.Seller = seller;
-    }
+        Id = protoSeller.Id,
+        Name = protoSeller.Name,
+        ContactEmail = protoSeller.ContactEmail
+    };
 
     private async Task UpdateWarehouseStocks(
         Server.Data.Product product,
