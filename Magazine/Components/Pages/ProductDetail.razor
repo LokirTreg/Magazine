@@ -1,0 +1,78 @@
+﻿@page "/product/{ProductId:int}"
+@using Shared.Protos
+@inject ProductViewModel ViewModel
+
+<h3>Редактирование товара</h3>
+
+<div class="alert @(ViewModel.StatusMessage.Contains("Ошибка") ? "alert-danger" : "alert-info")">
+    @ViewModel.StatusMessage
+</div>
+
+@if (ViewModel.CurrentProduct != null)
+{
+    <EditForm Model="@ViewModel.CurrentProduct.Product">
+        <div class="mb-3">
+            <label class="form-label">Название</label>
+            <InputText @bind-Value="@ViewModel.CurrentProduct.Product.Title"
+                       class="form-control" />
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Описание</label>
+            <InputTextArea @bind-Value="@ViewModel.CurrentProduct.Product.Description"
+                           class="form-control" rows="4" />
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Цена</label>
+            <InputNumber @bind-Value="@ViewModel.CurrentProduct.Product.Price"
+                         class="form-control" />
+        </div>
+
+        <h4>Информация о продавце</h4>
+        <div class="card mb-3">
+            <div class="card-body">
+                <p class="mb-1"><strong>Компания:</strong> @ViewModel.CurrentProduct.Seller.Name</p>
+                <p class="mb-0"><strong>Контакты:</strong> @ViewModel.CurrentProduct.Seller.ContactEmail</p>
+            </div>
+        </div>
+
+        <h4>Наличие на складах</h4>
+        <div class="table-responsive">
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>Адрес склада</th>
+                        <th>Количество</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var stock in ViewModel.CurrentProduct.WarehouseStocks)
+                    {
+                        <tr>
+                            <td>@stock.Warehouse.Address</td>
+                            <td>@stock.Quantity шт.</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <h4>Доступные страны</h4>
+        <ul class="list-group mb-3">
+            @foreach (var country in ViewModel.CurrentProduct.AvailableCountries)
+            {
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    @country.Name
+                    <span class="badge bg-primary rounded-pill">@country.Code</span>
+                </li>
+            }
+        </ul>
+
+        <button type="button"
+                class="btn btn-primary"
+                @onclick="@(() => ViewModel.UpdateProduct())">
+            Сохранить изменения
+        </button>
+    </EditForm>
+}
